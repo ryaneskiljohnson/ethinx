@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realbrand-frontend
+  namespace: realbrand-pro
+  labels:
+    app: realbrand-frontend
+    tier: frontend
+    version: "1.0.0"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+  selector:
+    matchLabels:
+      app: realbrand-frontend
+  template:
+    metadata:
+      labels:
+        app: realbrand-frontend
+        tier: frontend
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: realbrand-frontend
+      containers:
+      - name: frontend
+        image: ghcr.io/realbrand/realbrand-pro:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: PORT
+          value: "3000"
+        envFrom:
+        - secretRef:
+            name: realbrand-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/ready
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /api/startup
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 6
+        volumeMounts:
+        - name: frontend-cache
+          mountPath: /tmp/cache
+        - name: shared-storage
+          mountPath: /app/uploads
+      volumes:
+      - name: frontend-cache
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: realbrand-storage
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - realbrand-frontend
+              topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        node-type: frontend
+      tolerations:
+      - key: "frontend-only"
+        operator: "Exists"
+        effect: "NoSchedule"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realbrand-worker
+  namespace: realbrand-pro
+  labels:
+    app: realbrand-worker
+    tier: backend
+    version: "1.0.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: realbrand-worker
+  template:
+    metadata:
+      labels:
+        app: realbrand-worker
+        tier: backend
+        version: "1.0.0"
+    spec:
+      serviceAccountName: realbrand-worker
+      containers:
+      - name: worker
+        image: ghcr.io/realbrand/realbrand-pro:latest
+        imagePullPolicy: Always
+        command: ["npm", "run", "worker"]
+        ports:
+        - containerPort: 3001
+          name: metrics
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: WORKER_TYPE
+          value: background-jobs
+        envFrom:
+        - secretRef:
+            name: realbrand-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /api/worker/health
+            port: metrics
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        volumeMounts:
+        - name: worker-storage
+          mountPath: /app/temp
+      volumes:
+      - name: worker-storage
+        persistentVolumeClaim:
+          claimName: realbrand-worker-storage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realbrand-analytics
+  namespace: realbrand-pro
+  labels:
+    app: realbrand-analytics
+    tier: analytics
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: realbrand-analytics
+  template:
+    metadata:
+      labels:
+        app: realbrand-analytics
+        tier: analytics
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: analytics
+        image: ghcr.io/realbrand/realbrand-pro:latest
+        imagePullPolicy: Always
+        command: ["npm", "run", "analytics"]
+        ports:
+        - containerPort: 3002
+          name: metrics
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: WORKER_TYPE
+          value: analytics-processor
+        envFrom:
+        - secretRef:
+            name: realbrand-secrets
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: analytics-cache
+          mountPath: /tmp/analytics
+      volumes:
+      - name: analytics-cache
+        emptyDir:
+          sizeLimit: 2Gi
+

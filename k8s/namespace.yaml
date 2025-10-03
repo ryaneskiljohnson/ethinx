@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: realbrand-pro
+  labels:
+    name: realbrand-pro
+    environment: production
+    tier: frontend
+    version: "1.0.0"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: realbrand-staging
+  labels:
+    name: realbrand-staging
+    environment: staging
+    tier: frontend
+    version: "1.0.0"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: realbrand-monitoring
+  labels:
+    name: realbrand-monitoring
+    environment: shared
+    tier: monitoring
+    version: "1.0.0"
+
